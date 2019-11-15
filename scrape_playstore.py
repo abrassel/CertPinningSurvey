@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
 from time import sleep
 from selenium.webdriver.chrome.options import Options
 chrome_options = Options()
