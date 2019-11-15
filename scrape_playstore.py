@@ -72,7 +72,7 @@ class AppController:
         app_ids = set()
         for new_app_ids in self.infinite_scroll(task):
 
-            if not new_app_ids - app_ids or len(app_ids) > 150:
+            if not new_app_ids - app_ids or len(app_ids) > size:
                 break
 
             yield new_app_ids - app_ids
