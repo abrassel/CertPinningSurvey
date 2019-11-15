@@ -3,10 +3,14 @@ from threading import Thread
 from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
 from queue import Queue
 import scrape_playstore
 import os
 import argparse
+
+chrome_options = Options()
+chrome_options.add_arguments("--headless")
 
 DONE=None
 NUM_WORKERS = 2
@@ -23,7 +27,7 @@ LOCATION = None
 
 class APKPureScraper:
     def __init__(self):
-        self.driver = webdriver.Chrome()
+        self.driver = webdriver.Chrome(options=chrome_options)
 
 
     def get_app_page(self, app_id):
