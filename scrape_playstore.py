@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
 from time import sleep
 from selenium.webdriver.chrome.options import Options
 chrome_options = Options()
@@ -73,7 +72,7 @@ class AppController:
         app_ids = set()
         for new_app_ids in self.infinite_scroll(task):
 
-            if not new_app_ids - app_ids or len(app_ids) > 150:
+            if not new_app_ids - app_ids or len(app_ids) > size:
                 break
 
             yield new_app_ids - app_ids
@@ -97,7 +96,7 @@ class AppController:
         return attrs
     
 DONE=None
-def gen_app_ids_by_chunk(results_per_category=150):
+def gen_app_ids(results_per_category=150):
     '''generator that simultaneously pulls from each category'''
     
     found_app_ids = Queue()
@@ -130,5 +129,5 @@ def gen_app_ids_by_chunk(results_per_category=150):
         
             
 if __name__=="__main__":
-    for app_id in gen_app_ids_by_chunk():
+    for app_id in gen_app_ids():
         print(app_id)
