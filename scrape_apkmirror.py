@@ -8,6 +8,7 @@ import scrape_playstore
 import os
 import argparse
 
+DONE=None
 NUM_WORKERS = 2
 
 ALLOWED_DPIS = []
@@ -113,13 +114,21 @@ class APKMirrorWorker(Thread):
 
     def run(self):
         while True:
-            category, app_id = self.in_queue.get()
+            scraped_app = self.in_queue.get()
+
+            if scraped_app == DONE:
+                break
+            
+            category, app_id = scraped_app
             links = self.scraper.get_filtered_versions_download(app_id)
             
             # go to category directory
             # go to app_id directory (create if not exists)
             # download apk with name: version.apk
 
+            if not links:
+                continue  # don't create an empty folder
+            
             try:
                 os.mkdir(
                     "{}/{}".format(
@@ -131,14 +140,10 @@ class APKMirrorWorker(Thread):
                 '''File already exists'''
                 pass
 
-            # do download here in 'location/category/app_id/'
-            print(links)
-            self.in_queue.task_done()
-
 
 def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture_list=[]):
-    ALLOWED_DPIS = dpi_list
-    ALLOWED_ARCHITECTURES = architecture_list
+    global ALLOWED_DPIS; ALLOWED_DPIS = dpi_list
+    global ALLOWED_ARCHITECTURES; ALLOWED_ARCHITECTURES = architecture_list
     LOCATION = download_directory
 
     if not os.path.exists(download_directory):
@@ -156,16 +161,24 @@ def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture
 
             
     q = Queue()
+    workers = [APKMirrorWorker(q) for i in range(NUM_WORKERS)]
+    for worker in workers:
+        worker.start()
 
-    for i in range(NUM_WORKERS):
-        APKMirrorWorker(q).start()
-
-
+    generated = 0  # it's hacky code time
     for category, app_id in scrape_playstore.gen_app_ids(num_apps):
+        generated += 1
+        if generated > num_apps:
+            break
         q.put((category, app_id))
-        
-    q.join()
 
+
+    for i in range(len(workers)):
+        q.put(DONE)
+    
+    for worker in workers:
+        worker.join()
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Fetch android apk mirrors')
@@ -199,10 +212,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
+    
     download_mirrors(
         args.download_dir,
         args.num_apps,
-        args.architectures,
-        args.dpi
+        args.dpi,
+        args.architectures
     )
