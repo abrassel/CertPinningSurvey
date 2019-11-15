@@ -96,7 +96,7 @@ class AppController:
         return attrs
     
 DONE=None
-def gen_app_ids_by_chunk(results_per_category=150):
+def gen_app_ids(results_per_category=150):
     '''generator that simultaneously pulls from each category'''
     
     found_app_ids = Queue()
@@ -129,5 +129,5 @@ def gen_app_ids_by_chunk(results_per_category=150):
         
             
 if __name__=="__main__":
-    for app_id in gen_app_ids_by_chunk():
+    for app_id in gen_app_ids():
         print(app_id)
