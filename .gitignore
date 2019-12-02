@@ -1,3 +1,6 @@
+# Virtual Environments
+.env
+
 # Compiled class file
 *.class
 
@@ -6,6 +9,15 @@
 
 # BlueJ files
 *.ctxt
+
+#python cache
+__pycache__
+
+#annoying emacs stuff
+.\#*\#
+\#*\#
+.\#*
+
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
