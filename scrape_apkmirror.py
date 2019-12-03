@@ -320,9 +320,6 @@ def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture
         print("Path does not exist!")
         exit()
 
-    shutil.rmtree(download_directory)
-    os.mkdir(download_directory)
-
     downloader = Downloader(default_download_directory, Semaphore(NUM_CONCURRENT_DOWNLOADS))
 
     downloader.start()
