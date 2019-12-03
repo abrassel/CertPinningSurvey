@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-from threading import Thread
+from threading import Thread, Semaphore
 from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -15,9 +15,11 @@ from pathlib import Path
 
 DONE=None
 NUM_WORKERS = 3
+NUM_CONCURRENT_DOWNLOADS = 3
 
 ARCHITECTURE_INDEX = 2
 SCREEN_DPI_INDEX = 4
+SECONDS_BETWEEN_DOWNLOADS = 60
 
 ROOT_URL = "https://apkpure.com/"
 DOWNLOAD_PAGE = "search?q={}&t=app"
@@ -175,7 +177,8 @@ class APKPureScraper:
         return download_link.get_attribute("href").split("?")[0] if download_link else None
 
 
-    def download_link(self, link):
+    def download_link(self, link, download_semaphore):
+        download_semaphore.acquire()
         self.driver.get(link)
         download_file_elm_name = self.driver.find_element_by_class_name("file").text
         download_file_elm_name = re.match("(.*) \(", download_file_elm_name)[1]
@@ -207,8 +210,9 @@ class APKMirrorWorker(Thread):
             category, app_id = scraped_app
             try:
                 links = self.scraper.get_all_version_links(app_id)
-            except:
+            except Exception as e:
                 print("Problem with scraping {}".format(app_id))
+                print(e)
                 continue
             
             print ("links retrieved {}".format(links))
@@ -251,7 +255,7 @@ class APKMirrorWorker(Thread):
                 "xapk" if "XAPK" in test_download else "apk"
             )
                 
-            target_download = self.scraper.download_link(test_download)
+            target_download = self.scraper.download_link(test_download, self.downloader.download_semaphore)
             self.downloader.submit_task(target_download, file_name)
             
             link_file = "{}/{}/{}_links.txt".format(
@@ -265,11 +269,13 @@ class APKMirrorWorker(Thread):
                     out_file.write(link + "\n")
 
 class Downloader(Thread):
-    def __init__(self, download_dir):
+    def __init__(self, download_dir, download_semaphore):
         Thread.__init__(self)
         self.home = download_dir
         self.q = Queue()
-
+        self.download_semaphore = download_semaphore
+        self.downloadCount = 0
+        
 
     def run(self):
         while True:
@@ -279,6 +285,13 @@ class Downloader(Thread):
                 sleep(1.5)
 
             os.replace(os.path.join(self.home, file_name), target_path)
+            self.downloadCount += 1
+            self.download_semaphore.release()
+            sleep(SECONDS_BETWEEN_DOWNLOADS)
+            print("Have downloaded {} apps so far. Sleeping for {} seconds".format(
+                self.downloadCount,
+                SECONDS_BETWEEN_DOWNLOADS
+            ))
         
 
     def submit_task(self, file_name, target_path):
@@ -310,7 +323,7 @@ def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture
     shutil.rmtree(download_directory)
     os.mkdir(download_directory)
 
-    downloader = Downloader(default_download_directory)
+    downloader = Downloader(default_download_directory, Semaphore(NUM_CONCURRENT_DOWNLOADS))
 
     downloader.start()
     
