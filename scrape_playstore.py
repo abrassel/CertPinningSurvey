@@ -22,9 +22,11 @@ CHARTS = {
    
 
 class AppController:
-    def __init__(self):
-        self.driver = webdriver.Chrome(options=chrome_options)
-        
+    def __init__(self, headless=True):
+        if headless:
+            self.driver = webdriver.Chrome(options=chrome_options)
+        else:
+            self.driver = webdriver.Chrome()
         
     def infinite_scroll(self, task):
         # Get scroll height
@@ -96,13 +98,13 @@ class AppController:
         return attrs
     
 DONE=None
-def gen_app_ids(results_per_category=150):
+def gen_app_ids(results_per_category=150, headless=True):
     '''generator that simultaneously pulls from each category'''
     
     found_app_ids = Queue()
 
     def gen_apps(in_queue, chart_key, num_results):
-        app_controller = AppController()
+        app_controller = AppController(headless)
 
         for app_id_chunk in app_controller.gen_app_id_chunks(chart_key, num_results):
             for app_id in app_id_chunk:
@@ -117,6 +119,8 @@ def gen_app_ids(results_per_category=150):
             target = gen_apps,
             args=(found_app_ids, chart_key, results_per_category)
         ).start()
+        
+        
 
     dones_remaining = len(CHARTS)
     while dones_remaining > 0:
@@ -129,5 +133,5 @@ def gen_app_ids(results_per_category=150):
         
             
 if __name__=="__main__":
-    for app_id in gen_app_ids():
+    for app_id in gen_app_ids(100, False):
         print(app_id)
