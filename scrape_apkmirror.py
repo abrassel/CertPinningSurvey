@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-from threading import Thread, Semaphore
+from threading import Thread, Semaphore, Lock
 from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 DONE=None
-NUM_WORKERS = 3
+NUM_WORKERS = 2
 NUM_CONCURRENT_DOWNLOADS = 3
 
 ARCHITECTURE_INDEX = 2
@@ -215,7 +215,7 @@ class APKMirrorWorker(Thread):
                 print(e)
                 continue
             
-            print ("links retrieved {}".format(links))
+            print ("# links retrieved {}".format(len(links)))
 
             # next step, sort the links in order from largest apk number to smallest
             # it's ok to take a questionable sorting step here since we dont need perfection
@@ -230,8 +230,7 @@ class APKMirrorWorker(Thread):
             
             try:
                 os.mkdir(
-                    "{}/{}".format(
-                        category,
+                    "{}".format(
                         app_id
                     )
                 )
@@ -248,8 +247,7 @@ class APKMirrorWorker(Thread):
 
             version = version[1]
             
-            file_name = "{}/{}/{}.{}".format(
-                category,
+            file_name = "{}/{}.{}".format(
                 app_id,
                 version,
                 "xapk" if "XAPK" in test_download else "apk"
@@ -258,44 +256,61 @@ class APKMirrorWorker(Thread):
             target_download = self.scraper.download_link(test_download, self.downloader.download_semaphore)
             self.downloader.submit_task(target_download, file_name)
             
-            link_file = "{}/{}/{}_links.txt".format(
-                category,
+            link_file = "{}/{}_links.txt".format(
+                app_id,
+                app_id
+            )
+
+            attr_file = "{}/{}_cats.txt".format(
                 app_id,
                 app_id
             )
 
             with open(link_file, "w") as out_file:
-                for link in sorted_download_links[1:]:
-                    out_file.write(link + "\n")
+                out_file.writelines(sorted_download_links[1:])
+
+            with open(attr_file, "w") as out_file:
+                out_file.write(category + "\n")
 
 class Downloader(Thread):
     def __init__(self, download_dir, download_semaphore):
         Thread.__init__(self)
         self.home = download_dir
-        self.q = Queue()
+        self.mappings = {}
         self.download_semaphore = download_semaphore
         self.downloadCount = 0
-        
+        self.lock = Lock()
+        self.mappingsfile = open(os.path.join(download_dir, "mappings.txt"), "a")
 
     def run(self):
         while True:
-            file_name, target_path = self.q.get()
-            print("looking for: {}".format(os.path.join(self.home, file_name)))
-            while not os.path.isfile(os.path.join(self.home, file_name)):
+            matches = []
+            while not matches:
+                matches = list(filter(os.path.isfile, self.mappings))
                 sleep(1.5)
 
-            os.replace(os.path.join(self.home, file_name), target_path)
-            self.downloadCount += 1
-            self.download_semaphore.release()
-            sleep(SECONDS_BETWEEN_DOWNLOADS)
+            print("Here are my matches: {}".format(matches))
+            for match in matches:
+                print("Found match {}".format(match))
+                os.replace(match, self.mappings[match])
+                self.downloadCount += 1
+                self.download_semaphore.release()
+                
             print("Have downloaded {} apps so far. Sleeping for {} seconds".format(
                 self.downloadCount,
                 SECONDS_BETWEEN_DOWNLOADS
             ))
+            sleep(SECONDS_BETWEEN_DOWNLOADS)
         
 
     def submit_task(self, file_name, target_path):
-        self.q.put((file_name, target_path))
+        self.lock.acquire()
+        file_full_path = os.path.join(self.home, file_name)
+        print ("Adding target: {}".format(file_full_path))
+        self.mappingsfile.write("{} -> {}\n".format(file_name, target_path))
+        self.mappingsfile.flush()
+        self.mappings[file_full_path] = target_path
+        self.lock.release()
 
 
 def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture_list=[], headless=True, default_download_directory=os.path.join(str(Path.home()), "Downloads")):
@@ -326,26 +341,28 @@ def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture
     
     os.chdir(download_directory)
         
-    for category in scrape_playstore.CHARTS:
-        try:
-            os.mkdir(category)
-        except FileExistsError:
-            '''working in a directory that's already been used before'''
-            pass
-
+    ###
+    #for category in scrape_playstore.CHARTS:
+    #    try:
+    #        os.mkdir(category)
+    #    except FileExistsError:
+    #        '''working in a directory that's already been used before'''
+    #        pass
+    ###
             
     q = Queue()
     workers = [APKMirrorWorker(downloader, q, architecture_list, dpi_lists, headless) for i in range(NUM_WORKERS)]
     for worker in workers:
         worker.start()
 
-    count = 0
-    for category, app_id in scrape_playstore.gen_app_ids(num_apps, headless=True):
-        if count < num_apps*NUM_WORKERS:
-            print ((category, app_id))
+    app_id_list = set()
+    for category, app_id in scrape_playstore.gen_app_ids(num_apps, headless=False):
+        if len(app_id_list) < num_apps*NUM_WORKERS:
+            if app_id in app_id_list:
+                continue
+            app_id_list.add(app_id)
             q.put((category, app_id))
-            count += 1
-        elif count == num_apps*NUM_WORKERS:
+        elif len(app_id_list) == num_apps*NUM_WORKERS:
             for i in range(NUM_WORKERS):
                 q.put(DONE)
         else:
