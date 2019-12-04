@@ -356,7 +356,7 @@ def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture
         worker.start()
 
     app_id_list = set()
-    for category, app_id in scrape_playstore.gen_app_ids(num_apps, headless=False):
+    for category, app_id in scrape_playstore.gen_app_ids(num_apps, headless=True):
         if len(app_id_list) < num_apps*NUM_WORKERS:
             if app_id in app_id_list:
                 continue
