@@ -405,7 +405,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--debug",
-        help="add this flag to run in headless mode",
+        help="add this flag to run in head mode",
         action='store_false'
     )
 
