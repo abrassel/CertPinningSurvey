@@ -281,18 +281,25 @@ class Downloader(Thread):
         self.downloadCount = 0
         self.lock = Lock()
         self.mappingsfile = open(os.path.join(download_dir, "mappings.txt"), "a")
-
+        self.shutdownFlag = False
+        
     def run(self):
-        while True:
+        while True:            
             matches = []
             while not matches:
+                self.lock.acquire()
+                if self.shutdownFlag and not self.mappings:
+                    return
                 matches = list(filter(os.path.isfile, self.mappings))
-                sleep(1.5)
+                if not matches:
+                    self.lock.release()
+                sleep(3)
 
             print("Here are my matches: {}".format(matches))
             for match in matches:
                 print("Found match {}".format(match))
                 os.replace(match, self.mappings[match])
+                del self.mappings[match]
                 self.downloadCount += 1
                 self.download_semaphore.release()
                 
@@ -300,10 +307,11 @@ class Downloader(Thread):
                 self.downloadCount,
                 SECONDS_BETWEEN_DOWNLOADS
             ))
+            self.lock.release()
             sleep(SECONDS_BETWEEN_DOWNLOADS)
         
 
-    def submit_task(self, file_name, target_path):
+    def submit_task(self, file_name, target_path):        
         self.lock.acquire()
         file_full_path = os.path.join(self.home, file_name)
         print ("Adding target: {}".format(file_full_path))
@@ -312,6 +320,9 @@ class Downloader(Thread):
         self.mappings[file_full_path] = target_path
         self.lock.release()
 
+
+    def shutdown(self):
+        self.shutdownFlag = True
 
 def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture_list=[], headless=True, default_download_directory=os.path.join(str(Path.home()), "Downloads")):
     # 3 different categories of apis - a valid range, a valid number, and "nodpi".  Filtered for other possible options though
@@ -371,6 +382,9 @@ def download_mirrors(download_directory, num_apps=150, dpi_list=[], architecture
             
     for worker in workers:
         worker.join()
+
+    downloader.shutdown()
+    downloader.join()
     
 
 if __name__ == "__main__":

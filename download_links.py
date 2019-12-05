@@ -1,51 +1,37 @@
+#!/usr/bin/python3
+
 import argparse
+import re
+from queue import Queue
 import os
-import Path
+from pathlib import Path
 from scrape_apkmirror import \
     NUM_WORKERS, NUM_CONCURRENT_DOWNLOADS, \
     APKPureScraper, Downloader
 from threading import Thread, Semaphore, Lock
 
+DONE = None
 
-
-class APKMirrorWorker(Thread):
+class APKMirrorWorkerCopy(Thread):
     def __init__(self, downloader,
-                 iterator,
-                 lock,
+                 queue,
                  headless=True
     ):
         Thread.__init__(self)
         self.scraper = APKPureScraper([], [], headless)
-        self.iterator = iterator
+        self.queue = queue
         self.downloader = downloader
-        self.lock = lock
 
         
     def run(self):
         while True:
-            self.lock.acquire()
-            if 
-            
-            category, app_id = scraped_app
-            try:
-                links = self.scraper.get_all_version_links(app_id)
-            except Exception as e:
-                print("Problem with scraping {}".format(app_id))
-                print(e)
-                continue
-            
-            print ("# links retrieved {}".format(len(links)))
 
-            # next step, sort the links in order from largest apk number to smallest
-            # it's ok to take a questionable sorting step here since we dont need perfection
-            
-            
-            # go to category directory
-            # go to app_id directory (create if not exists)
-            # download apk with name: version.apk
+            next_app_id_list = self.queue.get()
 
-            if not links:
-                continue  # don't create an empty folder
+            if next_app_id_list == None:
+                break
+            
+            app_id, links = next_app_id_list
             
             try:
                 os.mkdir(
@@ -58,46 +44,24 @@ class APKMirrorWorker(Thread):
                 pass
 
             sorted_download_links = sorted(list(links), reverse=True)
-            test_download = sorted_download_links[0]
-            version=re.search("/download/(\d+)-", test_download)
-            if not version:
-                print("There's a problem")
-                continue
 
-            version = version[1]
+            for download in sorted_download_links:
+                version=re.search("/download/(\d+)-", download)
+                if not version:
+                    print("There's a problem")
+                    continue
+
+                version = version[1]
             
-            file_name = "{}/{}.{}".format(
-                app_id,
-                version,
-                "xapk" if "XAPK" in test_download else "apk"
-            )
+                file_name = "{}/{}.{}".format(
+                    app_id,
+                    version,
+                    "xapk" if "XAPK" in download else "apk"
+                )
                 
-            target_download = self.scraper.download_link(test_download, self.downloader.download_semaphore)
-            self.downloader.submit_task(target_download, file_name)
-            
-            link_file = "{}/{}_links.txt".format(
-                app_id,
-                app_id
-            )
-
-            attr_file = "{}/{}_cats.txt".format(
-                app_id,
-                app_id
-            )
-
-            with open(link_file, "w") as out_file:
-                out_file.writelines(sorted_download_links[1:])
-
-            with open(attr_file, "w") as out_file:
-                out_file.write(category + "\n")
-
-
-
-
-
-
-
-
+                target_download = self.scraper.download_link(download, self.downloader.download_semaphore)
+                self.downloader.submit_task(target_download, file_name)
+                
 
 
 def download_versions(download_dir, headless=True):
@@ -109,35 +73,55 @@ def download_versions(download_dir, headless=True):
     if not os.path.exists(download_dir):
         print("Path does not exist!")
         exit()
+
+    os.chdir(download_dir)
         
     app_ids_to_download_links= {}
     for filename in os.listdir(download_dir):
-        app_ids_to_download_links[filename] = (
-            line.strip() for line in open(filename, "r"))
+        if not "_links.txt" in filename:
+            continue
+
+        with open(filename, "r") as link_file:
+            links = link_file.read().strip()
+
+        links = [link + "APK" for link in links.split("APK")[:-1]]
+        
+
+        app_ids_to_download_links[filename.split("_")[0]] = links
 
     downloader = Downloader(chrome_download_location,
                             Semaphore(NUM_CONCURRENT_DOWNLOADS))
 
-    access_lock = Lock()
-    iterator = iter(app_ids_to_download_links)
+    queue = Queue()
     downloader.start()
-    os.chdir(download_directory)
     workers = [
         APKMirrorWorkerCopy(
             downloader,
-            iterator,
-            access_lock,
+            queue,
             headless
             )
         for i in range(NUM_WORKERS)
     ]
+
+    for worker in workers:
+        worker.start()
+
+    for app_id in app_ids_to_download_links:
+        queue.put((app_id, app_ids_to_download_links[app_id]))
     
-            
+    for i in range(NUM_WORKERS):
+        queue.put(DONE)
+
+    for worker in workers:
+        worker.join()
+
+    downloader.shutdown()
+    downloader.join()
             
 
 
 if __name__ == "__main__":
-    parser = argeparse.ArgumentParser(description='Download a versioned set of apks based on a folder of text files')
+    parser = argparse.ArgumentParser(description='Download a versioned set of apks based on a folder of text files')
 
     parser.add_argument(
         "-d", "--download_dir",
